@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.db.*
+*.wal
+.env
+.envrc
+.DS_Store
+.ruff_cache/
+.mypy_cache/
+
+.claude/
+CLAUDE.md
+CLAUDE.*.md
+
+README.local.md

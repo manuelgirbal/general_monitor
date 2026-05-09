@@ -1,0 +1,8 @@
+shiny
+polars
+pyarrow
+pytz
+duckdb
+plotly
+httpx
+python-dotenv
