@@ -20,9 +20,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 
-python -m ingest.runner          # one ingest pass — writes to ./data.db
-shiny run --reload app.py        # http://127.0.0.1:8000
+python -m ingest.runner                            # one ingest pass — writes to ./data.db
+uvicorn app:app --host 127.0.0.1 --port 8000 --reload   # http://127.0.0.1:8000
 ```
+
+The app is a Starlette parent that mounts two Shiny apps: the public dashboard at `/` and an admin panel at `/admin` (intended to sit behind Caddy Basic Auth in production).
 
 ## Schema
 

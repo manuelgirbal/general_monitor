@@ -6,6 +6,7 @@ import polars as pl
 
 BASE_URL = os.environ.get("MEMPOOL_SPACE_BASE", "https://mempool.space/api")
 SOURCE_NAME = "mempool_space.mempool"
+INTERVAL_SECONDS = 60
 
 SCHEMA = {
     "ts": pl.Datetime(time_unit="us", time_zone="UTC"),
@@ -20,18 +21,25 @@ SCHEMA = {
 
 def fetch(client: httpx.Client) -> pl.DataFrame:
     timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
+
     r = client.get(f"{BASE_URL}/mempool", timeout=timeout)
     r.raise_for_status()
     data = r.json()
+
+    r2 = client.get(f"{BASE_URL}/v1/fees/mempool-blocks", timeout=timeout)
+    r2.raise_for_status()
+    # feeRange: [min, p10, p25, p50, p75, p90, max] for the next projected block
+    fee_range = r2.json()[0]["feeRange"]
+
     return pl.DataFrame(
         {
             "ts": [datetime.now(tz=timezone.utc)],
             "tx_count": [int(data["count"])],
             "vsize": [int(data["vsize"])],
             "total_fee_btc": [float(data["total_fee"]) / 1e8],
-            "fee_p10": [None],
-            "fee_p50": [None],
-            "fee_p90": [None],
+            "fee_p10": [float(fee_range[1])],
+            "fee_p50": [float(fee_range[3])],
+            "fee_p90": [float(fee_range[5])],
         },
         schema=SCHEMA,
     )

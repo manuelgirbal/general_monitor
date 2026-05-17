@@ -6,3 +6,5 @@ duckdb
 plotly
 httpx
 python-dotenv
+starlette
+uvicorn[standard]
