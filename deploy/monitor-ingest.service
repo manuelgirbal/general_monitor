@@ -1,0 +1,16 @@
+[Unit]
+Description=general_monitor ingester (oneshot, driven by monitor-ingest.timer)
+After=network.target
+
+[Service]
+Type=oneshot
+User=monitor
+Group=monitor
+WorkingDirectory=/opt/monitor
+EnvironmentFile=/opt/monitor/.env
+ExecStart=/opt/monitor/.venv/bin/python -m ingest.runner
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/monitor

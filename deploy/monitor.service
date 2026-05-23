@@ -1,0 +1,21 @@
+[Unit]
+Description=general_monitor Shiny app (Starlette + uvicorn, loopback only)
+After=network.target
+
+[Service]
+Type=simple
+User=monitor
+Group=monitor
+WorkingDirectory=/opt/monitor
+EnvironmentFile=/opt/monitor/.env
+ExecStart=/opt/monitor/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8001
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/monitor
+
+[Install]
+WantedBy=multi-user.target

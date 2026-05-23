@@ -1,0 +1,18 @@
+# Append this block to /etc/caddy/Caddyfile.
+# Replace <BCRYPT_HASH> with the output of: caddy hash-password
+monitor.manuelgg.com.ar {
+    @admin path /admin /admin/*
+    handle @admin {
+        basic_auth {
+            admin <BCRYPT_HASH>
+        }
+        reverse_proxy 127.0.0.1:8001
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8001
+    }
+    encode zstd gzip
+    log {
+        output file /var/log/caddy/monitor.log
+    }
+}
