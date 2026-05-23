@@ -4,7 +4,15 @@ import plotly.graph_objects as go
 from shiny import App, render, ui
 
 from db import get_conn
-from plots import BTC_ORANGE, base_layout, fmt_age, fmt_sat_vb, page_head
+from plots import (
+    BTC_ORANGE,
+    base_layout,
+    fmt_age,
+    fmt_ehs,
+    fmt_sat_vb,
+    fmt_usd,
+    page_head,
+)
 
 
 def _load_mempool(hours: int = 24):
@@ -39,6 +47,38 @@ def _load_latest_block():
         conn.close()
 
 
+def _load_prices(hours: int = 24, pair: str = "BTC/USD"):
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=hours)
+    conn = get_conn(readonly=True)
+    try:
+        return conn.execute(
+            """
+            SELECT ts, price
+            FROM prices
+            WHERE pair = ? AND ts >= ?
+            ORDER BY ts
+            """,
+            [pair, cutoff],
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def _load_latest_network():
+    conn = get_conn(readonly=True)
+    try:
+        return conn.execute(
+            """
+            SELECT ts, hash_rate_ehs, difficulty
+            FROM network_stats
+            ORDER BY ts DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+
 app_ui = ui.page_fluid(
     *page_head(),
     ui.h1("general_monitor"),
@@ -46,6 +86,10 @@ app_ui = ui.page_fluid(
     ui.output_ui("latest_block_card"),
     ui.output_ui("mempool_chart"),
     ui.output_ui("fees_chart"),
+    ui.h2("Bitcoin · market"),
+    ui.output_ui("price_card"),
+    ui.h2("Bitcoin · network"),
+    ui.output_ui("network_card"),
 )
 
 
@@ -118,5 +162,52 @@ def server(input, output, session):
             ),
         )
 
+    @render.ui
+    def price_card():
+        rows = _load_prices(24)
+        if not rows:
+            return ui.p("No price data yet.")
+        latest_ts, latest_price = rows[-1]
+        first_price = rows[0][1]
+        change = (latest_price - first_price) / first_price * 100 if first_price else 0
+        change_color = "#52be80" if change >= 0 else "#e74c3c"
+        sign = "+" if change >= 0 else ""
+        fig = go.Figure(
+            go.Scatter(
+                x=[r[0] for r in rows],
+                y=[r[1] for r in rows],
+                mode="lines",
+                line=dict(color=BTC_ORANGE),
+                hovertemplate="%{x}<br>%{y:$,.0f}<extra></extra>",
+            )
+        )
+        layout = base_layout("BTC / USD (last 24h)", y_title="USD")
+        layout["height"] = 240
+        fig.update_layout(**layout)
+        age = (datetime.now(tz=timezone.utc) - latest_ts).total_seconds()
+        return ui.div(
+            ui.h3(fmt_usd(latest_price)),
+            ui.p(
+                ui.tags.span(f"{sign}{change:.2f}% 24h", style=f"color: {change_color}"),
+                f" · {fmt_age(age)}",
+            ),
+            ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False)),
+        )
+
+    @render.ui
+    def network_card():
+        row = _load_latest_network()
+        if row is None:
+            return ui.p("No network stats yet.")
+        ts, hash_rate_ehs, difficulty = row
+        age = (datetime.now(tz=timezone.utc) - ts).total_seconds()
+        return ui.div(
+            ui.h3(f"Hashrate · {fmt_ehs(hash_rate_ehs)}"),
+            ui.p(
+                f"Difficulty: {difficulty:,.2e} · {fmt_age(age)}"
+                if difficulty is not None
+                else f"{fmt_age(age)}"
+            ),
+        )
 
 app = App(app_ui, server)

@@ -1,5 +1,6 @@
 import os
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import polars as pl
@@ -18,11 +19,7 @@ SCHEMA = {
 }
 
 
-def fetch(client: httpx.Client) -> pl.DataFrame:
-    timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
-    r = client.get(f"{BASE_URL}/v1/blocks", timeout=timeout)
-    r.raise_for_status()
-    blocks = r.json()
+def _to_df(blocks: list[dict]) -> pl.DataFrame:
     return pl.DataFrame(
         {
             "height": [int(b["height"]) for b in blocks],
@@ -37,6 +34,13 @@ def fetch(client: httpx.Client) -> pl.DataFrame:
         },
         schema=SCHEMA,
     )
+
+
+def fetch(client: httpx.Client) -> pl.DataFrame:
+    timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
+    r = client.get(f"{BASE_URL}/v1/blocks", timeout=timeout)
+    r.raise_for_status()
+    return _to_df(r.json())
 
 
 def upsert(conn, df: pl.DataFrame) -> int:
@@ -54,3 +58,39 @@ def upsert(conn, df: pl.DataFrame) -> int:
     finally:
         conn.unregister("_df")
     return df.height
+
+
+def backfill(
+    client: httpx.Client,
+    conn,
+    hours: int = 720,
+    sleep_s: float = 1.5,
+    max_pages: int = 500,
+) -> int:
+    # mempool.space /v1/blocks returns 15 blocks per page (no API key); paginate by passing
+    # the height of the earliest block on the previous page minus 1.
+    timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=hours)
+    earliest_height: int | None = None
+    inserted = 0
+    for _ in range(max_pages):
+        url = (
+            f"{BASE_URL}/v1/blocks"
+            if earliest_height is None
+            else f"{BASE_URL}/v1/blocks/{earliest_height - 1}"
+        )
+        r = client.get(url, timeout=timeout)
+        r.raise_for_status()
+        blocks = r.json()
+        if not blocks:
+            break
+        df = _to_df(blocks)
+        inserted += upsert(conn, df)
+        earliest_height = min(int(b["height"]) for b in blocks)
+        min_ts = min(
+            datetime.fromtimestamp(int(b["timestamp"]), tz=timezone.utc) for b in blocks
+        )
+        if min_ts < cutoff:
+            break
+        time.sleep(sleep_s)
+    return inserted

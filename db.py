@@ -59,6 +59,15 @@ SCHEMA_STATEMENTS = (
         PRIMARY KEY (ts, source)
     );
     """,
+    """
+    CREATE TABLE IF NOT EXISTS network_stats (
+        ts            TIMESTAMPTZ NOT NULL,
+        source        VARCHAR     NOT NULL,
+        hash_rate_ehs DOUBLE,
+        difficulty    DOUBLE,
+        PRIMARY KEY (ts, source)
+    );
+    """,
 )
 
 

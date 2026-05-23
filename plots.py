@@ -50,6 +50,18 @@ def fmt_sat_vb(v) -> str:
     return "—" if v is None else f"{v:.2f} sat/vB"
 
 
+def fmt_usd(v) -> str:
+    return "—" if v is None else f"${v:,.0f}"
+
+
+def fmt_ehs(v) -> str:
+    return "—" if v is None else f"{v:,.1f} EH/s"
+
+
+def fmt_int(v) -> str:
+    return "—" if v is None else f"{int(v):,}"
+
+
 def fmt_age(seconds: float) -> str:
     if seconds is None:
         return "—"
