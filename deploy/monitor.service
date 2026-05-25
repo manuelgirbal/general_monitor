@@ -11,11 +11,19 @@ EnvironmentFile=/opt/monitor/.env
 ExecStart=/opt/monitor/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8001
 Restart=on-failure
 RestartSec=5
+
 NoNewPrivileges=true
+PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ReadWritePaths=/var/lib/monitor
+LockPersonality=true
+# MemoryDenyWriteExecute is intentionally NOT set: polars calls mprotect(PROT_WRITE|PROT_EXEC)
+# at import time for its CPU feature check, which this flag would block.
 
 [Install]
 WantedBy=multi-user.target

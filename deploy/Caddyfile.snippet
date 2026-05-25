@@ -1,9 +1,10 @@
 # Append this block to /etc/caddy/Caddyfile.
 # Replace <BCRYPT_HASH> with the output of: caddy hash-password
+# Directive name: `basicauth` on Caddy 2.6, `basic_auth` on 2.8+. The VPS runs 2.6.
 monitor.manuelgg.com.ar {
     @admin path /admin /admin/*
     handle @admin {
-        basic_auth {
+        basicauth {
             admin <BCRYPT_HASH>
         }
         reverse_proxy 127.0.0.1:8001
