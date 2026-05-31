@@ -1,7 +1,10 @@
 # Append this block to /etc/caddy/Caddyfile.
-# Replace <BCRYPT_HASH> with the output of: caddy hash-password
+# Replace <BCRYPT_HASH> with the output of: caddy hash-password.
 # Directive name: `basicauth` on Caddy 2.6, `basic_auth` on 2.8+. The VPS runs 2.6.
+# TLS uses a Cloudflare Origin Certificate (long-lived, validated only by CF).
+# Install the cert/key at the paths below; see README.local.md for the install flow.
 monitor.manuelgg.com.ar {
+    tls /etc/caddy/origin/monitor.crt /etc/caddy/origin/monitor.key
     @admin path /admin /admin/*
     handle @admin {
         basicauth {
