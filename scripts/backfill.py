@@ -5,6 +5,8 @@ Usage:
     python -m scripts.backfill prices --days 30
     python -m scripts.backfill network --days 30
     python -m scripts.backfill blocks --hours 720
+    python -m scripts.backfill prices_history
+    python -m scripts.backfill tx_history
 """
 import argparse
 import os
@@ -17,7 +19,7 @@ from db import get_conn, init_schema
 from ingest.sources import blockchain_info, coingecko
 from ingest.sources.mempool_space import blocks as mp_blocks
 
-TARGETS = ("prices", "network", "blocks", "all")
+TARGETS = ("prices", "prices_history", "tx_history", "network", "blocks", "all")
 
 
 def _client() -> httpx.Client:
@@ -29,6 +31,20 @@ def _run_prices(conn, client, days: int) -> int:
     t0 = time.monotonic()
     n = coingecko.backfill(client, conn, days=days)
     print(f"prices: inserted {n} rows in {time.monotonic() - t0:.1f}s")
+    return n
+
+
+def _run_prices_history(conn, client) -> int:
+    t0 = time.monotonic()
+    n = blockchain_info.backfill_market_price(client, conn)
+    print(f"prices (history): inserted {n} rows in {time.monotonic() - t0:.1f}s")
+    return n
+
+
+def _run_tx_history(conn, client) -> int:
+    t0 = time.monotonic()
+    n = blockchain_info.backfill_n_transactions(client, conn)
+    print(f"tx_history: inserted {n} rows in {time.monotonic() - t0:.1f}s")
     return n
 
 
@@ -65,6 +81,18 @@ def main() -> int:
                 _run_prices(conn, client, args.days)
             except Exception as e:
                 print(f"prices failed: {type(e).__name__}: {e}", file=sys.stderr)
+                failures += 1
+        if args.target == "prices_history":
+            try:
+                _run_prices_history(conn, client)
+            except Exception as e:
+                print(f"prices_history failed: {type(e).__name__}: {e}", file=sys.stderr)
+                failures += 1
+        if args.target == "tx_history":
+            try:
+                _run_tx_history(conn, client)
+            except Exception as e:
+                print(f"tx_history failed: {type(e).__name__}: {e}", file=sys.stderr)
                 failures += 1
         if args.target in ("network", "all"):
             try:

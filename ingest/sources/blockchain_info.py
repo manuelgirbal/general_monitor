@@ -15,6 +15,19 @@ SCHEMA = {
     "difficulty": pl.Float64,
 }
 
+PRICE_SCHEMA = {
+    "ts": pl.Datetime(time_unit="us", time_zone="UTC"),
+    "source": pl.Utf8,
+    "pair": pl.Utf8,
+    "price": pl.Float64,
+}
+
+TX_HISTORY_SCHEMA = {
+    "ts": pl.Datetime(time_unit="us", time_zone="UTC"),
+    "source": pl.Utf8,
+    "n_tx": pl.Int64,
+}
+
 
 def fetch(client: httpx.Client) -> pl.DataFrame:
     timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
@@ -85,3 +98,78 @@ def backfill(client: httpx.Client, conn, timespan: str = "30days") -> int:
         schema=SCHEMA,
     )
     return upsert(conn, df)
+
+
+def backfill_market_price(client: httpx.Client, conn, timespan: str = "all") -> int:
+    # blockchain.info /charts/market-price returns one daily USD point per day.
+    # `timespan` is a window length, so "all" (not a fixed span from a start date)
+    # is what keeps the series reaching up to today.
+    timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "30"))
+    r = client.get(
+        f"{BASE_URL}/charts/market-price",
+        params={"timespan": timespan, "format": "json", "sampled": "false"},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    points = [p for p in r.json().get("values", []) if p.get("y")]
+    if not points:
+        return 0
+
+    df = pl.DataFrame(
+        {
+            "ts": [datetime.fromtimestamp(int(p["x"]), tz=timezone.utc) for p in points],
+            "source": ["blockchain_info"] * len(points),
+            "pair": ["BTC/USD"] * len(points),
+            "price": [float(p["y"]) for p in points],
+        },
+        schema=PRICE_SCHEMA,
+    )
+    conn.register("_df", df)
+    try:
+        conn.execute(
+            """
+            INSERT INTO prices (ts, source, pair, price)
+            SELECT ts, source, pair, price FROM _df
+            ON CONFLICT (ts, source, pair) DO NOTHING
+            """
+        )
+    finally:
+        conn.unregister("_df")
+    return df.height
+
+
+def backfill_n_transactions(client: httpx.Client, conn, timespan: str = "all") -> int:
+    # blockchain.info /charts/n-transactions returns one daily count of confirmed
+    # transactions per day. `timespan` is a window length, so "all" (not a fixed span
+    # from a start date) is what keeps the series reaching up to today.
+    timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "30"))
+    r = client.get(
+        f"{BASE_URL}/charts/n-transactions",
+        params={"timespan": timespan, "format": "json", "sampled": "false"},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    points = [p for p in r.json().get("values", []) if p.get("y")]
+    if not points:
+        return 0
+
+    df = pl.DataFrame(
+        {
+            "ts": [datetime.fromtimestamp(int(p["x"]), tz=timezone.utc) for p in points],
+            "source": ["blockchain_info"] * len(points),
+            "n_tx": [int(p["y"]) for p in points],
+        },
+        schema=TX_HISTORY_SCHEMA,
+    )
+    conn.register("_df", df)
+    try:
+        conn.execute(
+            """
+            INSERT INTO tx_history (ts, source, n_tx)
+            SELECT ts, source, n_tx FROM _df
+            ON CONFLICT (ts, source) DO NOTHING
+            """
+        )
+    finally:
+        conn.unregister("_df")
+    return df.height

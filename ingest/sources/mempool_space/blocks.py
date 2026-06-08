@@ -36,6 +36,18 @@ def _to_df(blocks: list[dict]) -> pl.DataFrame:
     )
 
 
+def _get_json(client: httpx.Client, url: str, timeout: float, retries: int = 4, backoff: float = 2.0):
+    for attempt in range(retries):
+        try:
+            r = client.get(url, timeout=timeout)
+            r.raise_for_status()
+            return r.json()
+        except (httpx.TimeoutException, httpx.TransportError):
+            if attempt == retries - 1:
+                raise
+            time.sleep(backoff * (attempt + 1))
+
+
 def fetch(client: httpx.Client) -> pl.DataFrame:
     timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
     r = client.get(f"{BASE_URL}/v1/blocks", timeout=timeout)
@@ -69,7 +81,7 @@ def backfill(
 ) -> int:
     # mempool.space /v1/blocks returns 15 blocks per page (no API key); paginate by passing
     # the height of the earliest block on the previous page minus 1.
-    timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
+    timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "30"))
     cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=hours)
     earliest_height: int | None = None
     inserted = 0
@@ -79,9 +91,7 @@ def backfill(
             if earliest_height is None
             else f"{BASE_URL}/v1/blocks/{earliest_height - 1}"
         )
-        r = client.get(url, timeout=timeout)
-        r.raise_for_status()
-        blocks = r.json()
+        blocks = _get_json(client, url, timeout)
         if not blocks:
             break
         df = _to_df(blocks)

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run general_monitor gap catch-up daily
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=15min
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

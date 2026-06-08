@@ -33,6 +33,14 @@ SCHEMA_STATEMENTS = (
     );
     """,
     """
+    CREATE TABLE IF NOT EXISTS tx_history (
+        ts     TIMESTAMPTZ NOT NULL,
+        source VARCHAR     NOT NULL,
+        n_tx   BIGINT      NOT NULL,
+        PRIMARY KEY (ts, source)
+    );
+    """,
+    """
     CREATE TABLE IF NOT EXISTS prices (
         ts     TIMESTAMPTZ NOT NULL,
         source VARCHAR     NOT NULL,
