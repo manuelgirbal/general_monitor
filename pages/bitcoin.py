@@ -206,20 +206,22 @@ def server(input, output, session):
         if latest is None or not rows:
             return ui.p("No price data yet.")
         latest_ts, latest_price = latest
-        first_price = rows[0][1]
-        change = (latest_price - first_price) / first_price * 100 if first_price else 0
-        change_color = "#52be80" if change >= 0 else "#e74c3c"
-        sign = "+" if change >= 0 else ""
         age = (datetime.now(tz=timezone.utc) - latest_ts).total_seconds()
+        # The "all" range starts in 2010 (~$0.07), so its change is astronomical
+        # and meaningless — only show the comparison for the bounded ranges.
+        change_span = None
+        if input.range() != "all":
+            first_price = rows[0][1]
+            change = (latest_price - first_price) / first_price * 100 if first_price else 0
+            change_color = "#52be80" if change >= 0 else "#e74c3c"
+            sign = "+" if change >= 0 else ""
+            change_span = ui.tags.span(
+                f"{sign}{change:.2f}% {RANGES[input.range()].lower()} · ",
+                style=f"color: {change_color}",
+            )
         return ui.div(
             ui.h3(fmt_usd(latest_price)),
-            ui.p(
-                ui.tags.span(
-                    f"{sign}{change:.2f}% {RANGES[input.range()].lower()}",
-                    style=f"color: {change_color}",
-                ),
-                f" · {fmt_age(age)}",
-            ),
+            ui.p(change_span, fmt_age(age)),
         )
 
     @render.ui
