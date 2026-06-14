@@ -1,16 +1,15 @@
 # general_monitor
 
-A self-hosted, multi-topic analytics monitor. The first vertical is Bitcoin / mempool; networking and cybersecurity verticals are planned. Built as a portfolio piece — public dashboards on top of free APIs.
+A self-hosted, multi-topic analytics monitor. The first vertical is Bitcoin / mempool; networking and cybersecurity verticals are planned. Public dashboards on top of free APIs.
 
 ## Stack
 
 - **UI / server:** Python Shiny
-- **Storage:** DuckDB (single-file)
+- **Storage:** DuckDB
 - **Data:** Polars
 - **Plots:** Plotly
 - **HTTP:** httpx
 
-A long-running Shiny app reads from DuckDB and binds only to loopback. A separate ingester process writes to the DB on a schedule. In production, Caddy fronts the app with HTTPS, exposes dashboards publicly, and protects `/admin*` with Basic Auth. Cloudflare adds WAF and rate limiting on top.
 
 ## Local dev
 
@@ -39,7 +38,7 @@ general_monitor/
 ├── ingest/
 │   ├── runner.py          # entrypoint: runs sources, logs to ingest_runs
 │   └── sources/
-│       └── mempool_space.py
+│       └── mempool_space/
 ├── requirements.txt
 └── .env.example
 ```
