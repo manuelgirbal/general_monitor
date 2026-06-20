@@ -76,6 +76,30 @@ SCHEMA_STATEMENTS = (
         PRIMARY KEY (ts, source)
     );
     """,
+    """
+    CREATE TABLE IF NOT EXISTS dolar_rates (
+        ts     TIMESTAMPTZ NOT NULL,
+        casa   VARCHAR     NOT NULL,
+        compra DOUBLE,
+        venta  DOUBLE      NOT NULL,
+        PRIMARY KEY (ts, casa)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS riesgo_pais (
+        ts    TIMESTAMPTZ NOT NULL,
+        valor DOUBLE      NOT NULL,
+        PRIMARY KEY (ts)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS usdc_supply (
+        ts          TIMESTAMPTZ NOT NULL,
+        circulating DOUBLE      NOT NULL,
+        price       DOUBLE,
+        PRIMARY KEY (ts)
+    );
+    """,
 )
 
 

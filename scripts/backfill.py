@@ -7,6 +7,9 @@ Usage:
     python -m scripts.backfill blocks --hours 720
     python -m scripts.backfill prices_history
     python -m scripts.backfill tx_history
+    python -m scripts.backfill dolar_history
+    python -m scripts.backfill riesgo_pais_history
+    python -m scripts.backfill usdc_history
 """
 import argparse
 import os
@@ -16,10 +19,20 @@ import time
 import httpx
 
 from db import get_conn, init_schema
-from ingest.sources import blockchain_info, coingecko
+from ingest.sources import argentinadatos, blockchain_info, coingecko, defillama
 from ingest.sources.mempool_space import blocks as mp_blocks
 
-TARGETS = ("prices", "prices_history", "tx_history", "network", "blocks", "all")
+TARGETS = (
+    "prices",
+    "prices_history",
+    "tx_history",
+    "network",
+    "blocks",
+    "dolar_history",
+    "riesgo_pais_history",
+    "usdc_history",
+    "all",
+)
 
 
 def _client() -> httpx.Client:
@@ -64,6 +77,27 @@ def _run_blocks(conn, client, hours: int) -> int:
     return n
 
 
+def _run_dolar_history(conn, client) -> int:
+    t0 = time.monotonic()
+    n = argentinadatos.backfill_dolar(client, conn)
+    print(f"dolar_history: inserted {n} rows in {time.monotonic() - t0:.1f}s")
+    return n
+
+
+def _run_riesgo_pais_history(conn, client) -> int:
+    t0 = time.monotonic()
+    n = argentinadatos.backfill_riesgo_pais(client, conn)
+    print(f"riesgo_pais_history: inserted {n} rows in {time.monotonic() - t0:.1f}s")
+    return n
+
+
+def _run_usdc_history(conn, client) -> int:
+    t0 = time.monotonic()
+    n = defillama.backfill(client, conn)
+    print(f"usdc_history: inserted {n} rows in {time.monotonic() - t0:.1f}s")
+    return n
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("target", choices=TARGETS)
@@ -105,6 +139,24 @@ def main() -> int:
                 _run_blocks(conn, client, args.hours)
             except Exception as e:
                 print(f"blocks failed: {type(e).__name__}: {e}", file=sys.stderr)
+                failures += 1
+        if args.target == "dolar_history":
+            try:
+                _run_dolar_history(conn, client)
+            except Exception as e:
+                print(f"dolar_history failed: {type(e).__name__}: {e}", file=sys.stderr)
+                failures += 1
+        if args.target == "riesgo_pais_history":
+            try:
+                _run_riesgo_pais_history(conn, client)
+            except Exception as e:
+                print(f"riesgo_pais_history failed: {type(e).__name__}: {e}", file=sys.stderr)
+                failures += 1
+        if args.target == "usdc_history":
+            try:
+                _run_usdc_history(conn, client)
+            except Exception as e:
+                print(f"usdc_history failed: {type(e).__name__}: {e}", file=sys.stderr)
                 failures += 1
     finally:
         client.close()

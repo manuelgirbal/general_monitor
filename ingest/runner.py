@@ -6,12 +6,20 @@ from datetime import datetime, timezone
 import httpx
 
 from db import get_conn, init_schema
-from ingest.sources import blockchain_info, coingecko
+from ingest.sources import argentinadatos, blockchain_info, coingecko, defillama, dolarapi
 from ingest.sources.mempool_space import blocks, mempool
 
 # Reachable-node tracking is parked: bitnodes.io was discontinued and the
 # replacement is to run our own Bitcoin Core node and query it via RPC.
-SOURCES = (mempool, blocks, coingecko, blockchain_info)
+SOURCES = (
+    mempool,
+    blocks,
+    coingecko,
+    blockchain_info,
+    dolarapi,
+    argentinadatos,
+    defillama,
+)
 
 
 def _log_run(conn, ts, source, status, latency_ms, error=None):

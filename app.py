@@ -4,7 +4,7 @@ from starlette.routing import Mount, Route
 
 from db import init_schema
 from pages.admin import app as admin_app
-from pages.bitcoin import app as public_app
+from pages.dashboard import app as public_app
 
 init_schema()
 

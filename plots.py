@@ -22,6 +22,10 @@ th { color: #888; font-weight: 600; }
 code { background: #222; color: #f7931a; padding: 2px 5px; border-radius: 3px; }
 a { color: #5dade2; }
 .js-plotly-plot { margin: 12px 0; border: 1px solid #222; border-radius: 4px; }
+.navbar { background: #1a1a1a !important; border-bottom: 1px solid #333; }
+.navbar .navbar-brand { color: #fff !important; font-weight: 400; }
+.navbar .nav-link { color: #bbb !important; }
+.navbar .nav-link.active { color: #f7931a !important; }
 """
 
 

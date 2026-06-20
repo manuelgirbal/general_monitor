@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import plotly.graph_objects as go
-from shiny import App, render, ui
+from shiny import module, render, ui
 
 from db import get_conn
 from plots import (
@@ -11,7 +11,6 @@ from plots import (
     fmt_ehs,
     fmt_sat_vb,
     fmt_usd,
-    page_head,
 )
 
 RANGES = {
@@ -179,26 +178,29 @@ def _load_latest_network():
         conn.close()
 
 
-app_ui = ui.page_fluid(
-    *page_head(),
-    ui.h1("general_monitor"),
-    ui.input_radio_buttons("range", "Range", choices=RANGES, selected="all", inline=True),
-    ui.h2("Bitcoin · market"),
-    ui.output_ui("price_headline"),
-    ui.input_radio_buttons("price_scale", "Scale", choices=SCALES, selected="linear", inline=True),
-    ui.output_ui("price_chart"),
-    ui.h2("Bitcoin · network"),
-    ui.output_ui("network_card"),
-    ui.h2("Bitcoin · on-chain"),
-    ui.output_ui("latest_block_card"),
-    ui.output_ui("tx_chart"),
-    ui.output_ui("fees_chart"),
-    ui.h2("Bitcoin · history"),
-    ui.output_ui("yearly_table"),
-)
+@module.ui
+def bitcoin_ui():
+    return ui.nav_panel(
+        "Bitcoin",
+        ui.input_radio_buttons("range", "Range", choices=RANGES, selected="all", inline=True),
+        ui.h2("Bitcoin · market"),
+        ui.output_ui("price_headline"),
+        ui.input_radio_buttons("price_scale", "Scale", choices=SCALES, selected="linear", inline=True),
+        ui.output_ui("price_chart"),
+        ui.h2("Bitcoin · network"),
+        ui.output_ui("network_card"),
+        ui.h2("Bitcoin · on-chain"),
+        ui.output_ui("latest_block_card"),
+        ui.output_ui("tx_chart"),
+        ui.output_ui("fees_chart"),
+        ui.h2("Bitcoin · history"),
+        ui.output_ui("yearly_table"),
+        value="bitcoin",
+    )
 
 
-def server(input, output, session):
+@module.server
+def bitcoin_server(input, output, session):
     @render.ui
     def price_headline():
         rows = _load_prices_daily(_cutoff(input.range()))
@@ -366,6 +368,3 @@ def server(input, output, session):
             ui.h3(f"Block #{height:,}"),
             ui.p(f"{fmt_age(age)} · {tx_count:,} tx · {size / 1_000_000:.2f} MB"),
         )
-
-
-app = App(app_ui, server)
