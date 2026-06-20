@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 import duckdb
@@ -7,6 +8,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DB_PATH = os.environ.get("DB_PATH", "./data.db")
+
+# DuckDB is single-writer across processes: while the ingester/backfill holds the
+# write lock, read-only opens fail. Live writes are sub-second, so a short retry
+# makes the overlap invisible; longer writes (backfills) fall through to DBBusy
+# and the UI degrades gracefully instead of showing a stack trace.
+RO_RETRIES = int(os.environ.get("DB_RO_RETRIES", "4"))
+RO_RETRY_DELAY = float(os.environ.get("DB_RO_RETRY_DELAY", "0.25"))
+
+
+class DBBusy(Exception):
+    """A read-only connection couldn't be acquired: a writer holds the lock."""
 
 
 SCHEMA_STATEMENTS = (
@@ -105,9 +117,23 @@ SCHEMA_STATEMENTS = (
 
 def get_conn(readonly: bool = False) -> duckdb.DuckDBPyConnection:
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = duckdb.connect(DB_PATH, read_only=readonly)
-    conn.execute("SET TimeZone='UTC'")
-    return conn
+    if not readonly:
+        conn = duckdb.connect(DB_PATH, read_only=False)
+        conn.execute("SET TimeZone='UTC'")
+        return conn
+    last = None
+    for attempt in range(RO_RETRIES):
+        try:
+            conn = duckdb.connect(DB_PATH, read_only=True)
+            conn.execute("SET TimeZone='UTC'")
+            return conn
+        except duckdb.IOException as e:
+            if "lock" not in str(e).lower():
+                raise
+            last = e
+            if attempt < RO_RETRIES - 1:
+                time.sleep(RO_RETRY_DELAY * (attempt + 1))
+    raise DBBusy(str(last))
 
 
 def init_schema() -> None:

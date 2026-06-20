@@ -7,6 +7,7 @@ from db import get_conn
 from plots import (
     BTC_ORANGE,
     base_layout,
+    busy_guard,
     fmt_age,
     fmt_ehs,
     fmt_sat_vb,
@@ -202,6 +203,7 @@ def bitcoin_ui():
 @module.server
 def bitcoin_server(input, output, session):
     @render.ui
+    @busy_guard
     def price_headline():
         rows = _load_prices_daily(_cutoff(input.range()))
         latest = _latest_price()
@@ -227,6 +229,7 @@ def bitcoin_server(input, output, session):
         )
 
     @render.ui
+    @busy_guard
     def price_chart():
         rows = _load_prices_daily(_cutoff(input.range()))
         if not rows:
@@ -248,6 +251,7 @@ def bitcoin_server(input, output, session):
         return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
 
     @render.ui
+    @busy_guard
     def tx_chart():
         rows = _load_tx_daily(_cutoff(input.range()))
         if not rows:
@@ -268,6 +272,7 @@ def bitcoin_server(input, output, session):
         return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
 
     @render.ui
+    @busy_guard
     def fees_chart():
         rows = _load_fees_daily(_cutoff(input.range()))
         if not rows:
@@ -309,6 +314,7 @@ def bitcoin_server(input, output, session):
         )
 
     @render.ui
+    @busy_guard
     def yearly_table():
         rows = _load_yearly_prices()
         if not rows:
@@ -342,6 +348,7 @@ def bitcoin_server(input, output, session):
         )
 
     @render.ui
+    @busy_guard
     def network_card():
         row = _load_latest_network()
         if row is None:
@@ -358,6 +365,7 @@ def bitcoin_server(input, output, session):
         )
 
     @render.ui
+    @busy_guard
     def latest_block_card():
         row = _load_latest_block()
         if row is None:

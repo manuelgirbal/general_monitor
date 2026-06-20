@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from shiny import module, render, ui
 
 from db import get_conn
-from plots import base_layout, fmt_age
+from plots import base_layout, busy_guard, fmt_age
 
 RANGES = {
     "all": "Total",
@@ -158,6 +158,7 @@ def macro_ar_ui():
 @module.server
 def macro_ar_server(input, output, session):
     @render.ui
+    @busy_guard
     def dolar_cards():
         rows = _load_dolar_latest()
         if not rows:
@@ -186,6 +187,7 @@ def macro_ar_server(input, output, session):
         )
 
     @render.ui
+    @busy_guard
     def dolar_chart():
         rows = _load_dolar_daily(_cutoff(input.range()))
         if not rows:
@@ -209,6 +211,7 @@ def macro_ar_server(input, output, session):
         return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
 
     @render.ui
+    @busy_guard
     def riesgo_card():
         rows = _load_riesgo()
         if not rows:
@@ -218,6 +221,7 @@ def macro_ar_server(input, output, session):
         return ui.div(ui.h3(f"{int(valor):,} bps"), ui.p(fmt_age(age)))
 
     @render.ui
+    @busy_guard
     def riesgo_chart():
         rows = _load_riesgo(_cutoff(input.range()))
         if not rows:
@@ -235,6 +239,7 @@ def macro_ar_server(input, output, session):
         return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
 
     @render.ui
+    @busy_guard
     def usdc_card():
         row = _load_usdc_latest()
         if row is None:
@@ -253,6 +258,7 @@ def macro_ar_server(input, output, session):
         )
 
     @render.ui
+    @busy_guard
     def usdc_chart():
         rows = _load_usdc_daily(_cutoff(input.range()))
         if not rows:

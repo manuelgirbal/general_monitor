@@ -1,4 +1,8 @@
+import functools
+
 from shiny import ui
+
+from db import DBBusy
 
 PLOTLY_TEMPLATE = "plotly_dark"
 PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js"
@@ -34,6 +38,17 @@ def page_head():
         ui.tags.style(DARK_CSS),
         ui.tags.script(src=PLOTLY_CDN),
     ]
+
+
+def busy_guard(fn):
+    """Wrap a render.ui body so a DB write-lock shows a soft notice, not a stack."""
+    @functools.wraps(fn)
+    def wrapper():
+        try:
+            return fn()
+        except DBBusy:
+            return ui.p("Data refreshing…", style="opacity: 0.5;")
+    return wrapper
 
 
 def base_layout(title: str, y_title: str = "", x_title: str = "UTC") -> dict:

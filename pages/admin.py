@@ -3,7 +3,7 @@ from datetime import timezone
 from shiny import App, render, ui
 
 from db import get_conn
-from plots import page_head
+from plots import busy_guard, page_head
 
 
 def _load_runs(limit: int = 50):
@@ -32,6 +32,7 @@ app_ui = ui.page_fluid(
 
 def server(input, output, session):
     @render.ui
+    @busy_guard
     def runs_table():
         rows = _load_runs(50)
         if not rows:
