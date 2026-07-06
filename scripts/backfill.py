@@ -10,6 +10,7 @@ Usage:
     python -m scripts.backfill dolar_history
     python -m scripts.backfill riesgo_pais_history
     python -m scripts.backfill usdc_history
+    python -m scripts.backfill cammesa_demand --days 30
 """
 import argparse
 import os
@@ -20,6 +21,7 @@ import httpx
 
 from db import get_conn, init_schema
 from ingest.sources import argentinadatos, blockchain_info, coingecko, defillama
+from ingest.sources.cammesa import demand as cammesa_demand
 from ingest.sources.mempool_space import blocks as mp_blocks
 
 TARGETS = (
@@ -31,6 +33,7 @@ TARGETS = (
     "dolar_history",
     "riesgo_pais_history",
     "usdc_history",
+    "cammesa_demand",
     "all",
 )
 
@@ -98,6 +101,13 @@ def _run_usdc_history(conn, client) -> int:
     return n
 
 
+def _run_cammesa_demand(conn, client, days: int) -> int:
+    t0 = time.monotonic()
+    n = cammesa_demand.backfill(client, conn, days=days)
+    print(f"cammesa_demand: inserted {n} rows in {time.monotonic() - t0:.1f}s")
+    return n
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("target", choices=TARGETS)
@@ -157,6 +167,12 @@ def main() -> int:
                 _run_usdc_history(conn, client)
             except Exception as e:
                 print(f"usdc_history failed: {type(e).__name__}: {e}", file=sys.stderr)
+                failures += 1
+        if args.target == "cammesa_demand":
+            try:
+                _run_cammesa_demand(conn, client, args.days)
+            except Exception as e:
+                print(f"cammesa_demand failed: {type(e).__name__}: {e}", file=sys.stderr)
                 failures += 1
     finally:
         client.close()

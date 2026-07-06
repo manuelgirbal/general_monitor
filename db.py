@@ -112,6 +112,28 @@ SCHEMA_STATEMENTS = (
         PRIMARY KEY (ts)
     );
     """,
+    """
+    CREATE TABLE IF NOT EXISTS cammesa_generation (
+        ts          TIMESTAMPTZ NOT NULL,
+        region      INTEGER     NOT NULL,
+        total       DOUBLE,
+        hidraulico  DOUBLE,
+        termico     DOUBLE,
+        nuclear     DOUBLE,
+        renovable   DOUBLE,
+        importacion DOUBLE,
+        PRIMARY KEY (ts, region)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS cammesa_demand (
+        ts     TIMESTAMPTZ NOT NULL,
+        region INTEGER     NOT NULL,
+        dem    DOUBLE,
+        temp   DOUBLE,
+        PRIMARY KEY (ts, region)
+    );
+    """,
 )
 
 

@@ -1,0 +1,24 @@
+[Unit]
+Description=general_monitor CAMMESA ingester (oneshot, daily, driven by monitor-cammesa.timer)
+After=network.target
+
+[Service]
+Type=oneshot
+User=monitor
+Group=monitor
+WorkingDirectory=/opt/monitor
+EnvironmentFile=/opt/monitor/.env
+ExecStart=/opt/monitor/.venv/bin/python -m ingest.runner cammesa
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/monitor
+LockPersonality=true
+# MemoryDenyWriteExecute is intentionally NOT set: polars calls mprotect(PROT_WRITE|PROT_EXEC)
+# at import time for its CPU feature check, which this flag would block.

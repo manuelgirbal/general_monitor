@@ -7,6 +7,8 @@ import httpx
 
 from db import get_conn, init_schema
 from ingest.sources import argentinadatos, blockchain_info, coingecko, defillama, dolarapi
+from ingest.sources.cammesa import demand as cammesa_demand
+from ingest.sources.cammesa import generation as cammesa_generation
 from ingest.sources.mempool_space import blocks, mempool
 
 # Reachable-node tracking is parked: bitnodes.io was discontinued and the
@@ -20,6 +22,16 @@ SOURCES = (
     argentinadatos,
     defillama,
 )
+
+# CAMMESA runs on its own daily timer (monitor-cammesa.timer) near end of the AR day,
+# not in the every-minute loop: the generation endpoint only returns the current day up
+# to now and can't backfill, so one late fetch captures the near-complete curve.
+CAMMESA_SOURCES = (
+    cammesa_generation,
+    cammesa_demand,
+)
+
+GROUPS = {"default": SOURCES, "cammesa": CAMMESA_SOURCES}
 
 
 def _log_run(conn, ts, source, status, latency_ms, error=None):
@@ -41,14 +53,14 @@ def _last_run_ts(conn, source_name):
     return row[0] if row else None
 
 
-def run_once() -> int:
+def run_once(sources=SOURCES) -> int:
     init_schema()
     conn = get_conn(readonly=False)
     user_agent = os.environ.get("INGEST_USER_AGENT", "general_monitor/0.1")
     client = httpx.Client(headers={"User-Agent": user_agent})
     failures = 0
     try:
-        for source in SOURCES:
+        for source in sources:
             now = datetime.now(tz=timezone.utc)
             last = _last_run_ts(conn, source.SOURCE_NAME)
             if last is not None:
@@ -83,4 +95,5 @@ def run_once() -> int:
 
 
 if __name__ == "__main__":
-    run_once()
+    group = sys.argv[1] if len(sys.argv) > 1 else "default"
+    run_once(GROUPS.get(group, SOURCES))

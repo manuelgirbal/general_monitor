@@ -1,0 +1,14 @@
+[Unit]
+Description=Run general_monitor CAMMESA ingester daily, late in the AR day
+
+[Timer]
+# 02:55 UTC = 23:55 AR (UTC-3): fire near end of the AR day, before the generation
+# endpoint rolls to the next day at 03:00 UTC / 00:00 AR. No RandomizedDelaySec on
+# purpose — a delay could push past AR midnight and lose the whole day.
+# Assumes the VPS system clock is UTC (verify with `timedatectl`).
+OnCalendar=*-*-* 02:55:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
