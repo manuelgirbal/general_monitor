@@ -40,7 +40,13 @@ def fetch(client: httpx.Client, region: int = REGION_SADI) -> pl.DataFrame:
         timeout=timeout,
     )
     r.raise_for_status()
-    return _to_df(r.json(), region)
+    # The "today" endpoint names its actual reading demHoy/tempHoy, unlike the
+    # ByFecha variant (dem/temp) that backfill hits and that _to_df expects.
+    rows = r.json()
+    for row in rows:
+        row["dem"] = row.get("demHoy")
+        row["temp"] = row.get("tempHoy")
+    return _to_df(rows, region)
 
 
 def upsert(conn, df: pl.DataFrame) -> int:
