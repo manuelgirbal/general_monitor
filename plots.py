@@ -30,7 +30,25 @@ a { color: #5dade2; }
 .navbar .navbar-brand { color: #fff !important; font-weight: 400; }
 .navbar .nav-link { color: #bbb !important; }
 .navbar .nav-link.active { color: #f7931a !important; }
+.stat-grid { display: grid; gap: 12px; margin: 12px 0;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.stat-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px;
+    padding: 14px 16px; border-top: 3px solid var(--accent, #2a2a2a); min-width: 0; }
+.stat-card .stat-label { color: #999; font-size: 0.8em; letter-spacing: 0.02em;
+    margin: 0 0 6px; }
+.stat-card .stat-value { color: #fff; font-size: 1.7em; font-weight: 600;
+    line-height: 1.1; margin: 0; white-space: nowrap; }
+.stat-card .stat-delta { font-size: 0.85em; margin: 6px 0 0; }
+.stat-card .stat-sub { color: #888; font-size: 0.8em; margin: 4px 0 0; }
+.stat-footnote { color: #777; font-size: 0.8em; margin: -4px 0 12px; }
+.chart-grid { display: grid; gap: 0 16px;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+@media (max-width: 520px) { .chart-grid { grid-template-columns: 1fr; } }
+.note { opacity: 0.7; font-size: 0.85em; }
 """
+
+UP_COLOR = "#52be80"
+DOWN_COLOR = "#e74c3c"
 
 
 def page_head():
@@ -51,6 +69,40 @@ def busy_guard(fn):
     return wrapper
 
 
+def stat_card(label: str, value: str, sub=None, delta=None, up_is_good=True, accent=None):
+    """KPI tile. `delta` is (pct_change, period_label); its color encodes direction × good/bad."""
+    children = [
+        ui.p(label, class_="stat-label"),
+        ui.p(value, class_="stat-value"),
+    ]
+    if delta is not None and delta[0] is not None:
+        pct, period = delta
+        good = (pct >= 0) == up_is_good
+        arrow = "▲" if pct >= 0 else "▼"
+        children.append(ui.p(
+            f"{arrow} {pct:+.1f}% {period}",
+            class_="stat-delta",
+            style=f"color: {UP_COLOR if good else DOWN_COLOR};",
+        ))
+    if sub:
+        children.append(ui.p(sub, class_="stat-sub"))
+    style = f"--accent: {accent};" if accent else None
+    return ui.div(*children, class_="stat-card", style=style)
+
+
+def stat_grid(*cards, footnote=None):
+    grid = ui.div(*[c for c in cards if c is not None], class_="stat-grid")
+    if footnote:
+        return ui.div(grid, ui.p(footnote, class_="stat-footnote"))
+    return grid
+
+
+def pct_change(new, old):
+    if new is None or not old:
+        return None
+    return (new - old) / old * 100
+
+
 def base_layout(title: str, y_title: str = "", x_title: str = "UTC") -> dict:
     return dict(
         template=PLOTLY_TEMPLATE,
@@ -63,6 +115,30 @@ def base_layout(title: str, y_title: str = "", x_title: str = "UTC") -> dict:
         plot_bgcolor=BG,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
+
+
+LEGEND_BELOW = dict(orientation="h", yanchor="top", y=-0.2, xanchor="left", x=0)
+
+
+def fig_html(fig):
+    return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
+
+
+def add_range_buttons(fig, default_years=None):
+    """Client-side zoom buttons for long, low-frequency series that ignore the page range."""
+    fig.update_xaxes(rangeselector=dict(
+        buttons=[
+            dict(count=5, label="5y", step="year", stepmode="backward"),
+            dict(count=10, label="10y", step="year", stepmode="backward"),
+            dict(step="all", label="All"),
+        ],
+        bgcolor="#222", activecolor="#444", font=dict(color="#ddd"),
+        x=0, y=1.0, yanchor="bottom",
+    ))
+    if default_years:
+        end = max(max(t.x) for t in fig.data if len(t.x))
+        fig.update_xaxes(range=[end.replace(year=end.year - default_years), end])
+    return fig
 
 
 def fmt_sat_vb(v) -> str:

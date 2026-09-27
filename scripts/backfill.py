@@ -11,6 +11,8 @@ Usage:
     python -m scripts.backfill riesgo_pais_history
     python -m scripts.backfill usdc_history
     python -m scripts.backfill cammesa_demand --days 30
+    python -m scripts.backfill bcra_history
+    python -m scripts.backfill markets_history
 """
 import argparse
 import os
@@ -20,7 +22,14 @@ import time
 import httpx
 
 from db import get_conn, init_schema
-from ingest.sources import argentinadatos, blockchain_info, coingecko, defillama
+from ingest.sources import (
+    argentinadatos,
+    bcra,
+    blockchain_info,
+    coingecko,
+    defillama,
+    yahoo_finance,
+)
 from ingest.sources.cammesa import demand as cammesa_demand
 from ingest.sources.mempool_space import blocks as mp_blocks
 
@@ -34,6 +43,8 @@ TARGETS = (
     "riesgo_pais_history",
     "usdc_history",
     "cammesa_demand",
+    "bcra_history",
+    "markets_history",
     "all",
 )
 
@@ -108,6 +119,20 @@ def _run_cammesa_demand(conn, client, days: int) -> int:
     return n
 
 
+def _run_bcra_history(conn, client) -> int:
+    t0 = time.monotonic()
+    n = bcra.backfill(client, conn)
+    print(f"bcra_history: inserted {n} rows in {time.monotonic() - t0:.1f}s")
+    return n
+
+
+def _run_markets_history(conn, client) -> int:
+    t0 = time.monotonic()
+    n = yahoo_finance.backfill(client, conn)
+    print(f"markets_history: inserted {n} rows in {time.monotonic() - t0:.1f}s")
+    return n
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("target", choices=TARGETS)
@@ -168,11 +193,23 @@ def main() -> int:
             except Exception as e:
                 print(f"usdc_history failed: {type(e).__name__}: {e}", file=sys.stderr)
                 failures += 1
-        if args.target == "cammesa_demand":
+        if args.target in ("cammesa_demand", "all"):
             try:
                 _run_cammesa_demand(conn, client, args.days)
             except Exception as e:
                 print(f"cammesa_demand failed: {type(e).__name__}: {e}", file=sys.stderr)
+                failures += 1
+        if args.target == "bcra_history":
+            try:
+                _run_bcra_history(conn, client)
+            except Exception as e:
+                print(f"bcra_history failed: {type(e).__name__}: {e}", file=sys.stderr)
+                failures += 1
+        if args.target == "markets_history":
+            try:
+                _run_markets_history(conn, client)
+            except Exception as e:
+                print(f"markets_history failed: {type(e).__name__}: {e}", file=sys.stderr)
                 failures += 1
     finally:
         client.close()

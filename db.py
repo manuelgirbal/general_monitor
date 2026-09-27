@@ -134,6 +134,23 @@ SCHEMA_STATEMENTS = (
         PRIMARY KEY (ts, region)
     );
     """,
+    """
+    CREATE TABLE IF NOT EXISTS macro_series (
+        ts     TIMESTAMPTZ NOT NULL,
+        series VARCHAR     NOT NULL,
+        source VARCHAR     NOT NULL,
+        value  DOUBLE      NOT NULL,
+        PRIMARY KEY (ts, series)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS market_daily (
+        ts     TIMESTAMPTZ NOT NULL,
+        symbol VARCHAR     NOT NULL,
+        close  DOUBLE      NOT NULL,
+        PRIMARY KEY (ts, symbol)
+    );
+    """,
 )
 
 

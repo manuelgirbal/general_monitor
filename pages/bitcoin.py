@@ -8,10 +8,14 @@ from plots import (
     BTC_ORANGE,
     base_layout,
     busy_guard,
+    fig_html,
     fmt_age,
     fmt_ehs,
     fmt_sat_vb,
     fmt_usd,
+    pct_change,
+    stat_card,
+    stat_grid,
 )
 
 RANGES = {
@@ -213,20 +217,13 @@ def bitcoin_server(input, output, session):
         age = (datetime.now(tz=timezone.utc) - latest_ts).total_seconds()
         # The "all" range starts in 2010 (~$0.07), so its change is astronomical
         # and meaningless — only show the comparison for the bounded ranges.
-        change_span = None
+        delta = None
         if input.range() != "all":
-            first_price = rows[0][1]
-            change = (latest_price - first_price) / first_price * 100 if first_price else 0
-            change_color = "#52be80" if change >= 0 else "#e74c3c"
-            sign = "+" if change >= 0 else ""
-            change_span = ui.tags.span(
-                f"{sign}{change:.2f}% {RANGES[input.range()].lower()} · ",
-                style=f"color: {change_color}",
-            )
-        return ui.div(
-            ui.h3(fmt_usd(latest_price)),
-            ui.p(change_span, fmt_age(age)),
-        )
+            delta = (pct_change(latest_price, rows[0][1]), RANGES[input.range()].lower())
+        return stat_grid(stat_card(
+            "BTC / USD", fmt_usd(latest_price),
+            delta=delta, sub=f"Updated {fmt_age(age)}", accent=BTC_ORANGE,
+        ))
 
     @render.ui
     @busy_guard
@@ -248,7 +245,7 @@ def bitcoin_server(input, output, session):
         fig.update_layout(**layout)
         if input.price_scale() == "log":
             fig.update_yaxes(type="log")
-        return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
+        return fig_html(fig)
 
     @render.ui
     @busy_guard
@@ -269,7 +266,7 @@ def bitcoin_server(input, output, session):
             f"Transactions per day ({RANGES[input.range()]})", y_title="tx / day"
         )
         fig.update_layout(**layout)
-        return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
+        return fig_html(fig)
 
     @render.ui
     @busy_guard
@@ -355,13 +352,12 @@ def bitcoin_server(input, output, session):
             return ui.p("No network stats yet.")
         ts, hash_rate_ehs, difficulty = row
         age = (datetime.now(tz=timezone.utc) - ts).total_seconds()
-        return ui.div(
-            ui.h3(f"Hashrate · {fmt_ehs(hash_rate_ehs)}"),
-            ui.p(
-                f"Difficulty: {difficulty:,.2e} · {fmt_age(age)}"
-                if difficulty is not None
-                else f"{fmt_age(age)}"
+        return stat_grid(
+            stat_card("Hashrate", fmt_ehs(hash_rate_ehs), accent=BTC_ORANGE),
+            stat_card(
+                "Difficulty", "—" if difficulty is None else f"{difficulty / 1e12:,.1f} T"
             ),
+            footnote=f"Updated {fmt_age(age)}",
         )
 
     @render.ui
@@ -372,7 +368,8 @@ def bitcoin_server(input, output, session):
             return ui.div(ui.p("No blocks yet. Run ", ui.tags.code("python -m ingest.runner"), "."))
         height, _hash, ts, tx_count, size = row
         age = (datetime.now(tz=timezone.utc) - ts).total_seconds()
-        return ui.div(
-            ui.h3(f"Block #{height:,}"),
-            ui.p(f"{fmt_age(age)} · {tx_count:,} tx · {size / 1_000_000:.2f} MB"),
+        return stat_grid(
+            stat_card("Latest block", f"#{height:,}", sub=f"mined {fmt_age(age)}", accent=BTC_ORANGE),
+            stat_card("Transactions", f"{tx_count:,}", sub="in latest block"),
+            stat_card("Block size", f"{size / 1_000_000:.2f} MB", sub="in latest block"),
         )

@@ -6,10 +6,9 @@ import polars as pl
 
 BASE_URL = os.environ.get("CAMMESA_BASE", "https://api.cammesa.com")
 SOURCE_NAME = "cammesa.generation"
-# Scheduled externally by monitor-cammesa.timer (once daily, late in the AR day): the
-# endpoint returns only the current day up to now and can't backfill, so a single late
-# fetch captures the near-complete curve. No self-throttle here.
-INTERVAL_SECONDS = 0
+# Polled from the default loop at this cadence, plus a forced run from
+# monitor-cammesa.timer near AR midnight (see ingest/runner.py).
+INTERVAL_SECONDS = 1800
 REGION_SADI = 1002
 
 SCHEMA = {

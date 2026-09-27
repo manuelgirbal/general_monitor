@@ -1,6 +1,6 @@
 # general_monitor
 
-A self-hosted, multi-topic analytics monitor. The first vertical is Bitcoin / mempool; networking and cybersecurity verticals are planned. Public dashboards on top of free APIs.
+A self-hosted, multi-topic analytics monitor. Tabs: Bitcoin (market, network, on-chain), Macro AR (dollar, inflation, reserves, country risk, INDEC poverty / unemployment / Gini, Di Tella confidence indices), Mercados (S&P 500, copper, gold, Brent, natural gas) and Energía AR (CAMMESA generation mix and demand). Public dashboards on top of free APIs.
 
 ## Stack
 

@@ -7,7 +7,7 @@ import polars as pl
 
 BASE_URL = os.environ.get("CAMMESA_BASE", "https://api.cammesa.com")
 SOURCE_NAME = "cammesa.demand"
-# Scheduled externally by monitor-cammesa.timer alongside generation (once daily).
+# Only run by monitor-cammesa.timer (once daily, forced); gaps heal via backfill.
 INTERVAL_SECONDS = 0
 REGION_SADI = 1002
 

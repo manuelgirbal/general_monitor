@@ -4,13 +4,40 @@ import plotly.graph_objects as go
 from shiny import module, render, ui
 
 from db import get_conn
-from plots import base_layout, busy_guard, fmt_age
+from plots import (
+    LEGEND_BELOW,
+    base_layout,
+    busy_guard,
+    fig_html,
+    fmt_age,
+    stat_card,
+    stat_grid,
+)
 
-RANGES = {"30d": "30 days", "7d": "7 days", "48h": "48 hours"}
-RANGE_HOURS = {"30d": 720, "7d": 168, "48h": 48}
+RANGES = {
+    "all": "Total",
+    "90d": "90 days",
+    "30d": "30 days",
+    "7d": "7 days",
+    "48h": "48 hours",
+}
+RANGE_HOURS = {"90d": 2160, "30d": 720, "7d": 168, "48h": 48}
 
 REGION_SADI = 1002
-GEN_WINDOW_HOURS = 24
+# CAMMESA reports every 5 min; a full AR day has 288 points.
+POINTS_PER_DAY = 288
+DAY_MS = 86_400_000
+# AR has no DST, so a fixed offset maps UTC to the local calendar day.
+AR_OFFSET = "INTERVAL 3 HOUR"
+# Averaging step per range, to keep long ranges light: (SQL bucket, label).
+STEPS = {
+    "48h": ("ts", "5-min"),
+    "7d": ("date_trunc('hour', ts)", "hourly avg"),
+    "30d": ("date_trunc('hour', ts)", "hourly avg"),
+    "90d": (f"date_trunc('day', ts - {AR_OFFSET})", "daily avg"),
+    "all": (f"date_trunc('day', ts - {AR_OFFSET})", "daily avg"),
+}
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 # Stack order is bottom-to-top: dispatchable baseload first, imports on top.
 GEN_SOURCES = (
@@ -23,7 +50,10 @@ GEN_SOURCES = (
 
 
 def _cutoff(range_key: str):
-    return datetime.now(tz=timezone.utc) - timedelta(hours=RANGE_HOURS[range_key])
+    hours = RANGE_HOURS.get(range_key)
+    if hours is None:
+        return EPOCH
+    return datetime.now(tz=timezone.utc) - timedelta(hours=hours)
 
 
 def _fmt_mw(v) -> str:
@@ -47,33 +77,53 @@ def _load_generation_latest():
         conn.close()
 
 
-def _load_generation_window(hours: int):
+def _load_generation_window(cutoff, bucket: str):
     conn = get_conn(readonly=True)
     try:
         return conn.execute(
             f"""
-            SELECT ts, hidraulico, termico, nuclear, renovable, importacion
+            SELECT {bucket} AS t, avg(hidraulico), avg(termico), avg(nuclear),
+                   avg(renovable), avg(importacion)
             FROM cammesa_generation
-            WHERE region = ?
-              AND ts >= (SELECT max(ts) FROM cammesa_generation WHERE region = ?)
-                        - INTERVAL {int(hours)} HOUR
-            ORDER BY ts
+            WHERE region = ? AND ts >= ?
+            GROUP BY 1
+            ORDER BY 1
             """,
-            [REGION_SADI, REGION_SADI],
+            [REGION_SADI, cutoff],
         ).fetchall()
     finally:
         conn.close()
 
 
-def _load_demand(cutoff):
+def _load_generation_daily():
     conn = get_conn(readonly=True)
     try:
         return conn.execute(
-            """
-            SELECT ts, dem, temp
+            f"""
+            SELECT date_trunc('day', ts - {AR_OFFSET}) AS d, count(*) AS n,
+                   avg(total), avg(hidraulico), avg(termico), avg(nuclear),
+                   avg(renovable), avg(importacion)
+            FROM cammesa_generation
+            WHERE region = ?
+            GROUP BY 1
+            ORDER BY 1
+            """,
+            [REGION_SADI],
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def _load_demand(cutoff, bucket: str):
+    conn = get_conn(readonly=True)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {bucket} AS t, avg(dem), avg(temp)
             FROM cammesa_demand
             WHERE region = ? AND ts >= ?
-            ORDER BY ts
+            GROUP BY 1
+            ORDER BY 1
             """,
             [REGION_SADI, cutoff],
         ).fetchall()
@@ -89,13 +139,15 @@ def energia_ar_ui():
         ui.h2("Generación · matriz eléctrica"),
         ui.output_ui("gen_cards"),
         ui.output_ui("gen_chart"),
+        ui.output_ui("gen_daily_chart"),
         ui.h2("Demanda · SADI"),
         ui.output_ui("demand_chart"),
         ui.p(
-            "Fuente: CAMMESA (Total del SADI). La generación acumula hacia "
-            "adelante desde que arranca el ingest; el histórico multi-día se "
-            "llena con el tiempo.",
-            style="opacity: 0.7; font-size: 0.85em;",
+            "Fuente: CAMMESA (Total del SADI). CAMMESA's generation-by-source feed only "
+            "exposes the current day, so this history is built by polling and starts "
+            "when the ingest did; days the ingest missed stay empty. Demand is "
+            "backfilled from CAMMESA's by-date endpoint.",
+            class_="note",
         ),
         value="energia_ar",
     )
@@ -114,27 +166,24 @@ def energia_ar_server(input, output, session):
             "hidraulico": hid, "termico": ter, "nuclear": nuc,
             "renovable": ren, "importacion": imp,
         }
-        cards = []
-        for key, label, _color in GEN_SOURCES:
+        cards = [stat_card(
+            "Generación total", f"{total / 1000:,.1f} GW" if total else "—",
+            sub="SADI, last reading",
+        )]
+        for key, label, color in GEN_SOURCES:
             v = by_key[key]
             pct = f"{v / total * 100:.0f}%" if v is not None and total else "—"
-            cards.append(ui.tags.td(
-                ui.h3(pct),
-                ui.p(f"{label} · {_fmt_mw(v)}", style="opacity: 0.7;"),
-            ))
+            cards.append(stat_card(label, pct, sub=_fmt_mw(v), accent=color))
         age = (datetime.now(tz=timezone.utc) - ts).total_seconds()
-        return ui.div(
-            ui.h3(f"Total {_fmt_mw(total)}"),
-            ui.tags.table(ui.tags.tbody(ui.tags.tr(*cards)), style="width:auto;"),
-            ui.p(fmt_age(age)),
-        )
+        return stat_grid(*cards, footnote=f"Updated {fmt_age(age)}")
 
     @render.ui
     @busy_guard
     def gen_chart():
-        rows = _load_generation_window(GEN_WINDOW_HOURS)
+        bucket, step = STEPS[input.range()]
+        rows = _load_generation_window(_cutoff(input.range()), bucket)
         if not rows:
-            return ui.p("No generation data yet.")
+            return ui.p("No generation data in this range yet.")
         ts = [r[0] for r in rows]
         cols = {
             "hidraulico": [r[1] for r in rows],
@@ -151,14 +200,49 @@ def energia_ar_server(input, output, session):
                 hovertemplate="%{y:,.0f} MW<extra>" + label + "</extra>",
             ))
         fig.update_layout(**base_layout(
-            f"Generación por fuente — last {GEN_WINDOW_HOURS}h", y_title="MW"
+            f"Generación por fuente — {step} ({RANGES[input.range()]})", y_title="MW"
         ))
-        return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
+        return fig_html(fig)
+
+    @render.ui
+    @busy_guard
+    def gen_daily_chart():
+        rows = _load_generation_daily()
+        if not rows:
+            return ui.p("No generation data yet.")
+        days = [r[0] for r in rows]
+        coverage = [min(r[1] / POINTS_PER_DAY, 1) * 100 for r in rows]
+        col = {"hidraulico": 3, "termico": 4, "nuclear": 5, "renovable": 6, "importacion": 7}
+        fig = go.Figure()
+        for key, label, color in GEN_SOURCES:
+            shares = [
+                (r[col[key]] or 0) / r[2] * 100 if r[2] else None for r in rows
+            ]
+            fig.add_trace(go.Bar(
+                x=days, y=shares, name=label, marker=dict(color=color),
+                customdata=coverage,
+                width=DAY_MS * 0.85,
+                hovertemplate=(
+                    "%{x|%Y-%m-%d}<br>%{y:.1f}%<br>day coverage %{customdata:.0f}%"
+                    "<extra>" + label + "</extra>"
+                ),
+            ))
+        layout = base_layout(
+            f"Matriz diaria — % of generation ({len(rows)} day(s))",
+            y_title="%",
+        )
+        layout["barmode"] = "stack"
+        layout["bargap"] = 0.15
+        fig.update_layout(**layout)
+        fig.update_yaxes(range=[0, 100])
+        fig.update_layout(legend=LEGEND_BELOW, height=360)
+        return fig_html(fig)
 
     @render.ui
     @busy_guard
     def demand_chart():
-        rows = _load_demand(_cutoff(input.range()))
+        bucket, step = STEPS[input.range()]
+        rows = _load_demand(_cutoff(input.range()), bucket)
         if not rows:
             return ui.p("No demand data yet.")
         fig = go.Figure(go.Scatter(
@@ -170,6 +254,6 @@ def energia_ar_server(input, output, session):
             hovertemplate="%{x|%Y-%m-%d %H:%M}<br>%{y:,.0f} MW · %{customdata:.0f}°C<extra></extra>",
         ))
         fig.update_layout(**base_layout(
-            f"Demanda — SADI ({RANGES[input.range()]})", y_title="MW"
+            f"Demanda — SADI, {step} ({RANGES[input.range()]})", y_title="MW"
         ))
-        return ui.HTML(fig.to_html(include_plotlyjs=False, full_html=False))
+        return fig_html(fig)

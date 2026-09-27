@@ -3,11 +3,13 @@ from shiny import App, ui
 from pages.bitcoin import bitcoin_server, bitcoin_ui
 from pages.energia_ar import energia_ar_server, energia_ar_ui
 from pages.macro_ar import macro_ar_server, macro_ar_ui
+from pages.markets import markets_server, markets_ui
 from plots import page_head
 
 app_ui = ui.page_navbar(
     bitcoin_ui("bitcoin"),
     macro_ar_ui("macro_ar"),
+    markets_ui("markets"),
     energia_ar_ui("energia_ar"),
     title="Monitor",
     id="vertical",
@@ -18,6 +20,7 @@ app_ui = ui.page_navbar(
 def server(input, output, session):
     bitcoin_server("bitcoin")
     macro_ar_server("macro_ar")
+    markets_server("markets")
     energia_ar_server("energia_ar")
 
 
