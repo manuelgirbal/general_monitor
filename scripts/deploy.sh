@@ -61,6 +61,8 @@ if [[ "$MODE" == "apply" ]]; then
     cat <<EOF
 
 Suggested post-deploy commands (run on the VPS, none executed by this script):
+  # only if pyproject.toml / uv.lock changed:
+  cd $REMOTE_DIR && sudo -u $APP env UV_PYTHON_DOWNLOADS=never uv sync --frozen --no-dev --no-cache
   sudo systemctl restart monitor
   sudo systemctl restart monitor-ingest.timer
   systemctl status monitor monitor-ingest.timer

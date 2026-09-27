@@ -9,18 +9,17 @@ A self-hosted, multi-topic analytics monitor. The first vertical is Bitcoin / me
 - **Data:** Polars
 - **Plots:** Plotly
 - **HTTP:** httpx
+- **Packaging:** [uv](https://docs.astral.sh/uv/) (`pyproject.toml` + `uv.lock`)
 
 
 ## Local dev
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync                                            # creates .venv from uv.lock
 cp .env.example .env
 
-python -m ingest.runner                            # one ingest pass — writes to ./data.db
-uvicorn app:app --host 127.0.0.1 --port 8000 --reload   # http://127.0.0.1:8000
+uv run python -m ingest.runner                     # one ingest pass — writes to ./data.db
+uv run uvicorn app:app --host 127.0.0.1 --port 8000 --reload   # http://127.0.0.1:8000
 ```
 
 The app is a Starlette parent that mounts two Shiny apps: the public dashboard at `/` and an admin panel at `/admin` (intended to sit behind Caddy Basic Auth in production).
@@ -39,7 +38,8 @@ general_monitor/
 │   ├── runner.py          # entrypoint: runs sources, logs to ingest_runs
 │   └── sources/
 │       └── mempool_space/
-├── requirements.txt
+├── pyproject.toml         # dependencies (uv)
+├── uv.lock
 └── .env.example
 ```
 
