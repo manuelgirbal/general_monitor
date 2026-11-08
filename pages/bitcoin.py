@@ -26,6 +26,9 @@ RANGES = {
 }
 RANGE_DAYS = {"1y": 365, "6m": 182, "1m": 30}
 SCALES = {"linear": "Linear", "log": "Log"}
+# Over short windows the price stays within a narrow band, where a log axis is
+# indistinguishable from a linear one, so the toggle is only offered on long ranges.
+LOG_RANGES = ("all", "1y")
 
 
 def _cutoff(range_key: str):
@@ -190,7 +193,10 @@ def bitcoin_ui():
         ui.input_radio_buttons("range", "Range", choices=RANGES, selected="all", inline=True),
         ui.h2("Bitcoin · market"),
         ui.output_ui("price_headline"),
-        ui.input_radio_buttons("price_scale", "Scale", choices=SCALES, selected="linear", inline=True),
+        ui.panel_conditional(
+            " || ".join(f"input.range === '{r}'" for r in LOG_RANGES),
+            ui.input_radio_buttons("price_scale", "Scale", choices=SCALES, selected="linear", inline=True),
+        ),
         ui.output_ui("price_chart"),
         ui.h2("Bitcoin · network"),
         ui.output_ui("network_card"),
@@ -243,7 +249,7 @@ def bitcoin_server(input, output, session):
         layout = base_layout(f"BTC / USD — daily ({RANGES[input.range()]})", y_title="USD")
         layout["height"] = 320
         fig.update_layout(**layout)
-        if input.price_scale() == "log":
+        if input.range() in LOG_RANGES and input.price_scale() == "log":
             fig.update_yaxes(type="log")
         return fig_html(fig)
 

@@ -42,7 +42,7 @@ def _to_df(rows: list[dict], region: int) -> pl.DataFrame:
 
 def fetch(client: httpx.Client, region: int = REGION_SADI) -> pl.DataFrame:
     # Only returns the current day's 5-min curve; the `fecha` param is ignored, so there
-    # is no history here. Re-running the same day only adds new points (ON CONFLICT).
+    # is no history here. Re-running the same day adds new points and completes partial ones.
     timeout = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "15"))
     r = client.get(
         f"{BASE_URL}/demanda-svc/generacion/ObtieneGeneracioEnergiaPorRegion",
@@ -62,7 +62,16 @@ def upsert(conn, df: pl.DataFrame) -> int:
                 (ts, region, total, hidraulico, termico, nuclear, renovable, importacion)
             SELECT ts, region, total, hidraulico, termico, nuclear, renovable, importacion
             FROM _df
-            ON CONFLICT (ts, region) DO NOTHING
+            ON CONFLICT (ts, region) DO UPDATE SET
+                total = excluded.total,
+                hidraulico = excluded.hidraulico,
+                termico = excluded.termico,
+                nuclear = excluded.nuclear,
+                renovable = excluded.renovable,
+                importacion = excluded.importacion
+            -- CAMMESA publishes the newest 5-min slot before every source has
+            -- reported; only a fuller reading may replace the stored one.
+            WHERE coalesce(excluded.total, 0) > coalesce(cammesa_generation.total, 0)
             """
         )
     finally:

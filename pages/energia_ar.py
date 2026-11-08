@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta, timezone
 
 import plotly.graph_objects as go
@@ -29,15 +30,27 @@ POINTS_PER_DAY = 288
 DAY_MS = 86_400_000
 # AR has no DST, so a fixed offset maps UTC to the local calendar day.
 AR_OFFSET = "INTERVAL 3 HOUR"
-# Averaging step per range, to keep long ranges light: (SQL bucket, label).
+_HOUR = ("date_trunc('hour', ts)", "hourly avg", timedelta(hours=1), 12)
+_DAY = (f"date_trunc('day', ts - {AR_OFFSET})", "daily avg", timedelta(days=1), POINTS_PER_DAY)
+# Averaging step per range, to keep long ranges light:
+# (SQL bucket, label, bucket width, expected 5-min readings per bucket).
 STEPS = {
-    "48h": ("ts", "5-min"),
-    "7d": ("date_trunc('hour', ts)", "hourly avg"),
-    "30d": ("date_trunc('hour', ts)", "hourly avg"),
-    "90d": (f"date_trunc('day', ts - {AR_OFFSET})", "daily avg"),
-    "all": (f"date_trunc('day', ts - {AR_OFFSET})", "daily avg"),
+    "48h": ("ts", "5-min", timedelta(minutes=5), 1),
+    "7d": _HOUR,
+    "30d": _HOUR,
+    "90d": _DAY,
+    "all": _DAY,
 }
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# Thermal and hydro never drop to zero on the SADI; a reading without them is one
+# CAMMESA published before every source reported, and would show as a fake dip.
+COMPLETE_ROW = (
+    "hidraulico > 0 AND termico > 0 AND nuclear IS NOT NULL "
+    "AND renovable IS NOT NULL AND importacion IS NOT NULL"
+)
+# Buckets averaged over fewer readings than this share are skewed toward the hours
+# they happen to cover (e.g. daytime-only days overstate solar), so they are hidden.
+MIN_COVERAGE = 0.5
 
 # Stack order is bottom-to-top: dispatchable baseload first, imports on top.
 GEN_SOURCES = (
@@ -60,14 +73,35 @@ def _fmt_mw(v) -> str:
     return "—" if v is None else f"{v:,.0f} MW"
 
 
+def _min_readings(expected: int) -> int:
+    return max(1, math.ceil(expected * MIN_COVERAGE))
+
+
+def _break_gaps(ts: list, cols: dict, step: timedelta):
+    """Pin the stack to zero across missing buckets so Plotly doesn't draw a ramp over them."""
+    out_ts, out_cols, hover = [], {k: [] for k in cols}, []
+    for i, t in enumerate(ts):
+        if i and t - ts[i - 1] > step * 1.5:
+            for edge in (ts[i - 1] + step, t - step):
+                out_ts.append(edge)
+                hover.append("no data")
+                for k in cols:
+                    out_cols[k].append(0)
+        out_ts.append(t)
+        hover.append(None)
+        for k, v in cols.items():
+            out_cols[k].append(v[i])
+    return out_ts, out_cols, hover
+
+
 def _load_generation_latest():
     conn = get_conn(readonly=True)
     try:
         return conn.execute(
-            """
+            f"""
             SELECT ts, total, hidraulico, termico, nuclear, renovable, importacion
             FROM cammesa_generation
-            WHERE region = ?
+            WHERE region = ? AND {COMPLETE_ROW}
             ORDER BY ts DESC
             LIMIT 1
             """,
@@ -77,7 +111,7 @@ def _load_generation_latest():
         conn.close()
 
 
-def _load_generation_window(cutoff, bucket: str):
+def _load_generation_window(cutoff, bucket: str, min_readings: int):
     conn = get_conn(readonly=True)
     try:
         return conn.execute(
@@ -85,11 +119,12 @@ def _load_generation_window(cutoff, bucket: str):
             SELECT {bucket} AS t, avg(hidraulico), avg(termico), avg(nuclear),
                    avg(renovable), avg(importacion)
             FROM cammesa_generation
-            WHERE region = ? AND ts >= ?
+            WHERE region = ? AND ts >= ? AND {COMPLETE_ROW}
             GROUP BY 1
+            HAVING count(*) >= ?
             ORDER BY 1
             """,
-            [REGION_SADI, cutoff],
+            [REGION_SADI, cutoff, min_readings],
         ).fetchall()
     finally:
         conn.close()
@@ -104,11 +139,12 @@ def _load_generation_daily():
                    avg(total), avg(hidraulico), avg(termico), avg(nuclear),
                    avg(renovable), avg(importacion)
             FROM cammesa_generation
-            WHERE region = ?
+            WHERE region = ? AND {COMPLETE_ROW}
             GROUP BY 1
+            HAVING count(*) >= ?
             ORDER BY 1
             """,
-            [REGION_SADI],
+            [REGION_SADI, _min_readings(POINTS_PER_DAY)],
         ).fetchall()
     finally:
         conn.close()
@@ -145,7 +181,8 @@ def energia_ar_ui():
         ui.p(
             "Fuente: CAMMESA (Total del SADI). CAMMESA's generation-by-source feed only "
             "exposes the current day, so this history is built by polling and starts "
-            "when the ingest did; days the ingest missed stay empty. Demand is "
+            "when the ingest did; days the ingest missed stay empty. Incomplete readings "
+            "and periods with under half of their readings are left out. Demand is "
             "backfilled from CAMMESA's by-date endpoint.",
             class_="note",
         ),
@@ -180,24 +217,30 @@ def energia_ar_server(input, output, session):
     @render.ui
     @busy_guard
     def gen_chart():
-        bucket, step = STEPS[input.range()]
-        rows = _load_generation_window(_cutoff(input.range()), bucket)
+        bucket, step, width, expected = STEPS[input.range()]
+        rows = _load_generation_window(
+            _cutoff(input.range()), bucket, _min_readings(expected)
+        )
         if not rows:
             return ui.p("No generation data in this range yet.")
-        ts = [r[0] for r in rows]
-        cols = {
-            "hidraulico": [r[1] for r in rows],
-            "termico": [r[2] for r in rows],
-            "nuclear": [r[3] for r in rows],
-            "renovable": [r[4] for r in rows],
-            "importacion": [r[5] for r in rows],
-        }
+        ts, cols, hover = _break_gaps(
+            [r[0] for r in rows],
+            {
+                "hidraulico": [r[1] for r in rows],
+                "termico": [r[2] for r in rows],
+                "nuclear": [r[3] for r in rows],
+                "renovable": [r[4] for r in rows],
+                "importacion": [r[5] for r in rows],
+            },
+            width,
+        )
         fig = go.Figure()
         for key, label, color in GEN_SOURCES:
             fig.add_trace(go.Scatter(
                 x=ts, y=cols[key], mode="lines", name=label,
                 line=dict(width=0.5, color=color), stackgroup="one",
-                hovertemplate="%{y:,.0f} MW<extra>" + label + "</extra>",
+                hovertext=[h or f"{v:,.0f} MW" for h, v in zip(hover, cols[key])],
+                hovertemplate="%{hovertext}<extra>" + label + "</extra>",
             ))
         fig.update_layout(**base_layout(
             f"Generación por fuente — {step} ({RANGES[input.range()]})", y_title="MW"
@@ -228,7 +271,8 @@ def energia_ar_server(input, output, session):
                 ),
             ))
         layout = base_layout(
-            f"Matriz diaria — % of generation ({len(rows)} day(s))",
+            f"Matriz diaria — % of generation ({len(rows)} day(s) "
+            f"with ≥{MIN_COVERAGE:.0%} coverage)",
             y_title="%",
         )
         layout["barmode"] = "stack"
@@ -241,7 +285,7 @@ def energia_ar_server(input, output, session):
     @render.ui
     @busy_guard
     def demand_chart():
-        bucket, step = STEPS[input.range()]
+        bucket, step, _width, _expected = STEPS[input.range()]
         rows = _load_demand(_cutoff(input.range()), bucket)
         if not rows:
             return ui.p("No demand data yet.")
